@@ -1,0 +1,6 @@
+pandas
+playwright
+lxml
+html5lib
+requests
+beautifulsoup4

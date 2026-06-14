@@ -1,0 +1,33 @@
+name: Daily IPO Alert
+
+on:
+  schedule:
+    # 2:00 PM IST = 08:30 UTC
+    - cron: '30 8 * * *'
+  workflow_dispatch:
+
+jobs:
+  ipo-alert:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Playwright
+        run: |
+          pip install -r requirements.txt
+          playwright install chromium
+
+      - name: Run IPO Alert
+        env:
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_PASS: ${{ secrets.GMAIL_PASS }}
+          RECIPIENTS: ${{ secrets.RECIPIENTS }}
+        run: |
+          python ipo_alert.py
