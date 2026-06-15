@@ -3,7 +3,7 @@ name: Daily IPO Alert
 on:
   schedule:
     # 2:00 PM IST = 08:30 UTC
-    - cron: '30 8 * * *'
+    - cron: '*/5 * * * *'
   workflow_dispatch:
 
 jobs:
