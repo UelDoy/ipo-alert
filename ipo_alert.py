@@ -37,7 +37,8 @@ URLS = {
     "SME": "https://www.chittorgarh.com/report/ipo-subscription-status-live-bidding-data-bse-nse/21/sme/?year=2026",
 }
 
-GMP_URL = "https://www.investorgain.com/report/ipo-gmp-live/331/nonzero/"
+# Changed: /nonzero/ → /all/ to include IPOs with 0% GMP
+GMP_URL = "https://www.investorgain.com/report/ipo-gmp-live/331/all/"
 
 # ------------------------------------------------------------------
 # HELPERS
@@ -65,29 +66,10 @@ def normalize_ipo_name(value) -> str:
 
 def parse_date_series(series: pd.Series) -> pd.Series:
     """
-    Try to parse dates from subscription/GMP tables.
-    Supports both full dates (e.g. 25-Jun-2026) and dates without year
-    (e.g. 25-Jun, which gets the current year appended).
+    Parses full dates from subscription tables (e.g. '19-Jun-2026').
     """
     s = series.astype(str).str.strip()
-    current_year = datetime.datetime.now().year
-
-    parsed = pd.to_datetime(s, errors="coerce", dayfirst=True)
-
-    # Only trust the parse if at least one date has a reasonable year.
-    # Pandas may parse short dates like "19-Jun" as year 1900 — those
-    # must be discarded and re-parsed with the year appended instead.
-    valid_mask = parsed.notna() & (parsed.dt.year >= current_year - 1)
-    if valid_mask.any():
-        return parsed
-
-    # Fallback: append current year for short dates like "19-Jun"
-    parsed = pd.to_datetime(
-        s + f"-{current_year}",
-        format="%d-%b-%Y",
-        errors="coerce"
-    )
-    return parsed
+    return pd.to_datetime(s, errors="coerce", dayfirst=True)
 
 
 # ------------------------------------------------------------------
@@ -208,10 +190,7 @@ def filter_upcoming_ipos(subscription_df, days=FILTER_DAYS):
     work_df["parsed_date"] = parse_date_series(work_df[date_col])
 
     today = datetime.datetime.now().replace(
-        hour=0,
-        minute=0,
-        second=0,
-        microsecond=0
+        hour=0, minute=0, second=0, microsecond=0
     )
     end_date = today + datetime.timedelta(days=days, hours=23, minutes=59, seconds=59)
 
@@ -290,15 +269,18 @@ def filter_gmp_upcoming(gmp_df, days=FILTER_DAYS):
     if not date_col:
         return work_df.reset_index(drop=True)
 
-    work_df["parsed_date"] = parse_date_series(work_df[date_col])
-
     today = datetime.datetime.now().replace(
-        hour=0,
-        minute=0,
-        second=0,
-        microsecond=0
+        hour=0, minute=0, second=0, microsecond=0
     )
+    current_year = today.year
     end_date = today + datetime.timedelta(days=days, hours=23, minutes=59, seconds=59)
+
+    # GMP dates are always short format ("19-Jun"), so always append year
+    work_df["parsed_date"] = pd.to_datetime(
+        work_df[date_col].astype(str).str.strip() + f"-{current_year}",
+        format="%d-%b-%Y",
+        errors="coerce"
+    )
 
     valid_dates_df = work_df.dropna(subset=["parsed_date"]).copy()
 
@@ -370,11 +352,7 @@ def send_email(df_summary):
         """
         subject = "IPO Alert - No IPOs Found"
     else:
-        html_table = df_summary.to_html(
-            index=False,
-            classes="table",
-            border=0
-        )
+        html_table = df_summary.to_html(index=False, classes="table", border=0)
         html_content = f"""
         <html>
           <head>
@@ -404,7 +382,6 @@ def send_email(df_summary):
             msg["Subject"] = subject
             msg["From"] = GMAIL_USER
             msg["To"] = recipient
-
             msg.attach(MIMEText(html_content, "html"))
 
             try:
