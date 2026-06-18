@@ -70,17 +70,22 @@ def parse_date_series(series: pd.Series) -> pd.Series:
     (e.g. 25-Jun, which gets the current year appended).
     """
     s = series.astype(str).str.strip()
+    current_year = datetime.datetime.now().year
 
     parsed = pd.to_datetime(s, errors="coerce", dayfirst=True)
 
-    if parsed.notna().any():
+    # Only trust the parse if at least one date has a reasonable year.
+    # Pandas may parse short dates like "19-Jun" as year 1900 — those
+    # must be discarded and re-parsed with the year appended instead.
+    valid_mask = parsed.notna() & (parsed.dt.year >= current_year - 1)
+    if valid_mask.any():
         return parsed
 
-    current_year = datetime.datetime.now().year
+    # Fallback: append current year for short dates like "19-Jun"
     parsed = pd.to_datetime(
         s + f"-{current_year}",
-        errors="coerce",
-        format="%d-%b-%Y"
+        format="%d-%b-%Y",
+        errors="coerce"
     )
     return parsed
 
