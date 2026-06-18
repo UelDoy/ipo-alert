@@ -240,6 +240,18 @@ async def get_gmp_data():
             ~gmp_df.iloc[:, 0].astype(str).str.contains("No data", na=False)
         ]
 
+    # Strip embedded "GMP" text from within cell values
+    gmp_df = gmp_df.apply(
+        lambda col: (
+            col.astype(str)
+            .str.split(pat=r"(?i)GMP", n=1, regex=True)
+            .str[0]
+            .str.strip()
+        )
+        if col.dtype == "object"
+        else col
+    )
+
     # Remove rows containing @
     gmp_df = gmp_df[
         ~gmp_df.astype(str).apply(
@@ -353,32 +365,48 @@ def send_email(df_summary):
         """
         subject = "IPO Alert - No IPOs Found"
     else:
-        html_table = df_summary.to_html(index=False, border=0)
+        html_table = df_summary.to_html(
+            index=False,
+            classes="table",
+            border=0
+        )
         html_content = f"""
         <html>
-        <body>
+          <head>
+            <style>
+              .table {{ font-family: 'Segoe UI', Arial, sans-serif; border-collapse: collapse; width: 100%; font-size: 11px; }}
+              .table td, .table th {{ border: 1px solid #ddd; padding: 5px; text-align: center; }}
+              .table tr:nth-child(even) {{ background-color: #f9f9f9; }}
+              .table th {{ background-color: #1a3a5c; color: white; font-weight: bold; }}
+              h2 {{ font-family: Arial, sans-serif; color: #1a3a5c; }}
+            </style>
+          </head>
+          <body>
             <h2>IPO Alert</h2>
             <p>IPOs closing in the selected window:</p>
             {html_table}
             <p><small>Generated: {datetime.datetime.now()}</small></p>
-        </body>
+          </body>
         </html>
         """
         subject = f"IPO Alert - {len(df_summary)} IPO(s)"
 
-    for recipient in RECIPIENTS:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"] = GMAIL_USER
-        msg["To"] = recipient
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        server.login(GMAIL_USER, GMAIL_PASS)
 
-        msg.attach(MIMEText(html_content, "html"))
+        for recipient in RECIPIENTS:
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = subject
+            msg["From"] = GMAIL_USER
+            msg["To"] = recipient
 
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(GMAIL_USER, GMAIL_PASS)
-            server.sendmail(GMAIL_USER, recipient, msg.as_string())
+            msg.attach(MIMEText(html_content, "html"))
 
-        print(f"Email sent to {recipient}")
+            try:
+                server.sendmail(GMAIL_USER, recipient, msg.as_string())
+                print(f"Email sent to {recipient}")
+            except Exception as e:
+                print(f"Failed to send to {recipient}: {e}")
 
 
 # ------------------------------------------------------------------
