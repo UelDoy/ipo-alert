@@ -9,7 +9,12 @@ from email.mime.text import MIMEText
 
 from playwright.async_api import async_playwright
 
+import pytz
 
+IST = pytz.timezone("Asia/Kolkata")
+
+def get_now_ist():
+    return datetime.datetime.now(IST)
 # ------------------------------------------------------------------
 # CONFIG FROM GITHUB SECRETS / ENVIRONMENT
 # ------------------------------------------------------------------
@@ -189,7 +194,7 @@ def filter_upcoming_ipos(subscription_df, days=FILTER_DAYS):
 
     work_df["parsed_date"] = parse_date_series(work_df[date_col])
 
-    today = datetime.datetime.now().replace(
+    today = get_now_ist().replace(
         hour=0, minute=0, second=0, microsecond=0
     )
     end_date = today + datetime.timedelta(days=days, hours=23, minutes=59, seconds=59)
@@ -269,7 +274,7 @@ def filter_gmp_upcoming(gmp_df, days=FILTER_DAYS):
     if not date_col:
         return work_df.reset_index(drop=True)
 
-    today = datetime.datetime.now().replace(
+    today = get_now_ist().replace(
         hour=0, minute=0, second=0, microsecond=0
     )
     current_year = today.year
@@ -346,7 +351,7 @@ def send_email(df_summary):
         <body>
             <h2>IPO Alert</h2>
             <p>No IPOs found in the selected window.</p>
-            <p>Generated: {datetime.datetime.now()}</p>
+            <p>Generated: {get_now_ist().strftime("%d-%b-%Y %I:%M %p IST")}</p>
         </body>
         </html>
         """
@@ -368,7 +373,7 @@ def send_email(df_summary):
             <h2>IPO Alert</h2>
             <p>IPOs closing in the selected window:</p>
             {html_table}
-            <p><small>Generated: {datetime.datetime.now()}</small></p>
+            <p><small>Generated: {get_now_ist().strftime("%d-%b-%Y %I:%M %p IST")}</p>
           </body>
         </html>
         """
