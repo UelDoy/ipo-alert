@@ -4,4 +4,3 @@ lxml
 html5lib
 requests
 beautifulsoup4
-pytz

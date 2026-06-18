@@ -9,12 +9,7 @@ from email.mime.text import MIMEText
 
 from playwright.async_api import async_playwright
 
-import pytz
 
-IST = pytz.timezone("Asia/Kolkata")
-
-def get_now_ist():
-    return datetime.datetime.now(IST)
 # ------------------------------------------------------------------
 # CONFIG FROM GITHUB SECRETS / ENVIRONMENT
 # ------------------------------------------------------------------
@@ -42,12 +37,19 @@ URLS = {
     "SME": "https://www.chittorgarh.com/report/ipo-subscription-status-live-bidding-data-bse-nse/21/sme/?year=2026",
 }
 
-# Changed: /nonzero/ → /all/ to include IPOs with 0% GMP
 GMP_URL = "https://www.investorgain.com/report/ipo-gmp-live/331/all/"
 
 # ------------------------------------------------------------------
 # HELPERS
 # ------------------------------------------------------------------
+
+def get_now_ist() -> datetime.datetime:
+    """
+    Returns current IST time as a tz-naive datetime (UTC+5:30).
+    Avoids tz-aware vs tz-naive conflicts with pandas.
+    """
+    return datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)
+
 
 def clean_columns(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
@@ -194,9 +196,7 @@ def filter_upcoming_ipos(subscription_df, days=FILTER_DAYS):
 
     work_df["parsed_date"] = parse_date_series(work_df[date_col])
 
-    today = get_now_ist().replace(
-        hour=0, minute=0, second=0, microsecond=0
-    )
+    today = get_now_ist().replace(hour=0, minute=0, second=0, microsecond=0)
     end_date = today + datetime.timedelta(days=days, hours=23, minutes=59, seconds=59)
 
     mask = (
@@ -274,9 +274,7 @@ def filter_gmp_upcoming(gmp_df, days=FILTER_DAYS):
     if not date_col:
         return work_df.reset_index(drop=True)
 
-    today = get_now_ist().replace(
-        hour=0, minute=0, second=0, microsecond=0
-    )
+    today = get_now_ist().replace(hour=0, minute=0, second=0, microsecond=0)
     current_year = today.year
     end_date = today + datetime.timedelta(days=days, hours=23, minutes=59, seconds=59)
 
@@ -345,13 +343,16 @@ def build_summary(subscription_df, gmp_df):
 # ------------------------------------------------------------------
 
 def send_email(df_summary):
+    now_ist = get_now_ist()
+    generated_str = now_ist.strftime("%d-%b-%Y %I:%M %p IST")
+
     if df_summary.empty:
         html_content = f"""
         <html>
         <body>
             <h2>IPO Alert</h2>
             <p>No IPOs found in the selected window.</p>
-            <p>Generated: {get_now_ist().strftime("%d-%b-%Y %I:%M %p IST")}</p>
+            <p>Generated: {generated_str}</p>
         </body>
         </html>
         """
@@ -373,7 +374,7 @@ def send_email(df_summary):
             <h2>IPO Alert</h2>
             <p>IPOs closing in the selected window:</p>
             {html_table}
-            <p><small>Generated: {get_now_ist().strftime("%d-%b-%Y %I:%M %p IST")}</p>
+            <p><small>Generated: {generated_str}</small></p>
           </body>
         </html>
         """
