@@ -2,6 +2,7 @@ import os
 import smtplib
 import datetime
 import pandas as pd
+import re
 
 from io import StringIO
 from email.mime.multipart import MIMEMultipart
@@ -60,15 +61,16 @@ def clean_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def normalize_ipo_name(value) -> str:
-    return (
-        str(value)
-        .lower()
-        .split(" (")[0]
-        .split(" bse")[0]
-        .split(" nse")[0]
-        .strip()
-    )
+def clean_company_name(name) -> str:
+    name = str(name).lower()
+    # Remove anything in brackets, anywhere in the string
+    name = re.sub(r"\(.*?\)", "", name)
+    # Remove common keywords
+    for word in ["ltd", "limited", "ipo", "bse", "nse", "sme"]:
+        name = name.replace(word, "")
+    # Remove trailing single-letter status codes (e.g. " o", " p")
+    name = re.sub(r"\s[op]$", "", name.strip())
+    return name.strip()
 
 
 def parse_date_series(series: pd.Series) -> pd.Series:
@@ -312,10 +314,10 @@ def build_summary(subscription_df, gmp_df):
     merged_rows = []
 
     for _, g_row in gmp_work.iterrows():
-        g_name = normalize_ipo_name(g_row.get("Name", ""))
+        g_name = clean_company_name(g_row.get("Name", ""))
 
         for _, s_row in sub_work.iterrows():
-            s_name = str(s_row.get("Company", "")).lower().strip()
+            s_name = clean_company_name(s_row.get("Company", ""))  # now cleaned, not just lower+strip
 
             if g_name in s_name or s_name in g_name:
                 merged_rows.append({
