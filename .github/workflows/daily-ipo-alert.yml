@@ -22,5 +22,6 @@ jobs:
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_PASS: ${{ secrets.GMAIL_PASS }}
           RECIPIENTS: ${{ secrets.RECIPIENTS }}
+          FILTER_DAYS: ${{ vars.FILTER_DAYS }}
         run: |
           python ipo_alert.py

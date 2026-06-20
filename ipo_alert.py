@@ -31,7 +31,7 @@ print(f"Recipients: {RECIPIENTS}")
 # SETTINGS
 # ------------------------------------------------------------------
 
-FILTER_DAYS = 3
+FILTER_DAYS = int(os.environ.get("FILTER_DAYS", 3))
 
 URLS = {
     "Mainboard": "https://www.chittorgarh.com/report/ipo-subscription-status-live-bidding-data-bse-nse/21/mainboard/?year=2026",
