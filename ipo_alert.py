@@ -364,9 +364,36 @@ def build_summary(subscription_df, gmp_df):
     summary_df = pd.DataFrame(merged_rows)
 
     # DEBUG OUTPUT
-    print(f"Subscription rows: {len(sub_work)}")
-    print(f"GMP rows: {len(gmp_work)}")
-    print(f"Merged rows: {len(summary_df)}")
+    print("Loading GMP data...")
+    gmp_df = await get_gmp_data()
+    filtered_gmp_df = filter_gmp_upcoming(gmp_df, days=FILTER_DAYS)
+
+    # ================= DEBUG =================
+
+    print("\n========== SETTINGS ==========")
+    print("FILTER_DAYS =", FILTER_DAYS)
+    print("Current IST =", get_now_ist())
+
+    print("\n========== SUBSCRIPTION DATA ==========")
+    print("Total scraped:", len(subscription_df))
+    print("After filter:", len(filtered_subscription_df))
+
+    if not filtered_subscription_df.empty:
+        cols = [c for c in ["Company", "Closing Date"] if c in filtered_subscription_df.columns]
+        print(filtered_subscription_df[cols].to_string())
+
+    print("\n========== GMP DATA ==========")
+    print("Total scraped:", len(gmp_df))
+    print("After filter:", len(filtered_gmp_df))
+
+    if not filtered_gmp_df.empty:
+        cols = [c for c in ["Name", "Close"] if c in filtered_gmp_df.columns]
+        print(filtered_gmp_df[cols].to_string())
+
+# =========================================
+
+print("Building summary...")
+summary_df = build_summary(filtered_subscription_df, filtered_gmp_df)
 
     return summary_df
 
