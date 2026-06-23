@@ -226,28 +226,35 @@ async def get_gmp_data():
     gmp_df = pd.read_html(StringIO("<table>" + html + "</table>"))[0]
     gmp_df = gmp_df.dropna(how="all").reset_index(drop=True)
 
-    # 1. Remove placeholder rows
+    # Remove placeholder rows
     if len(gmp_df.columns) > 0:
         gmp_df = gmp_df[
             ~gmp_df.iloc[:, 0].astype(str).str.contains("No data", na=False)
         ]
 
-    # 2. FIX: Use expand=True exactly like your successful Colab code
+    # Strip embedded "GMP" text from within cell values
     gmp_df = gmp_df.apply(
         lambda col: (
             col.astype(str)
-            .str.split(pat=r"(?i)GMP", n=1, expand=True)[0]
+            .str.split(pat=r"(?i)GMP", n=1, regex=True)
+            .str[0]
             .str.strip()
         )
         if col.dtype == "object"
         else col
     )
 
-    # 3. FIX: Completely deleted the block that removes rows with '@'
-    # Do NOT put the @ filter back in, or you will lose today's live data!
+    # Remove rows containing @
+    gmp_df = gmp_df[
+        ~gmp_df.astype(str).apply(
+            lambda row: row.str.contains("@", regex=False, na=False).any(),
+            axis=1
+        )
+    ]
 
     gmp_df = clean_columns(gmp_df)
     return gmp_df.reset_index(drop=True)
+
 
 # ------------------------------------------------------------------
 # FILTER GMP DATA TO THE SAME DATE WINDOW
@@ -297,7 +304,6 @@ def filter_gmp_upcoming(gmp_df, days=FILTER_DAYS):
 # ------------------------------------------------------------------
 # MERGE SUBSCRIPTION + GMP
 # ------------------------------------------------------------------
-
 def build_summary(subscription_df, gmp_df):
     if subscription_df.empty or gmp_df.empty:
         return pd.DataFrame()
@@ -306,58 +312,40 @@ def build_summary(subscription_df, gmp_df):
     gmp_work = clean_columns(gmp_df)
 
     merged_rows = []
-    current_year = get_now_ist().year
 
     for _, g_row in gmp_work.iterrows():
+
+        # GMP side
         g_name_norm = normalize_name(g_row.get("Name", ""))
         g_prefix = g_name_norm[:5]
-        
-        # Safely parse GMP date
-        g_date_raw = str(g_row.get("Close", "")).strip()
-        g_date = pd.to_datetime(f"{g_date_raw}-{current_year}", errors="coerce")
+
+        g_close_raw = str(
+            g_row.get("Close", "")
+        ).strip()
 
         for _, s_row in sub_work.iterrows():
-            s_name_norm = normalize_name(s_row.get("Company", ""))
+
+            # Subscription side
+            s_name_norm = normalize_name(
+                s_row.get("Company", "")
+            )
             s_prefix = s_name_norm[:5]
-            
-            # Safely parse Subscription date
-            # Find the correct date column dynamically before the loops
-            sub_date_col = next((c for c in sub_work.columns if "Closing" in str(c) or "Close" in str(c)), "Closing Date")
-            gmp_date_col = next((c for c in gmp_work.columns if "Close" in str(c)), "Close")
 
-            for _, g_row in gmp_work.iterrows():
-                g_name_norm = normalize_name(g_row.get("Name", ""))
-                g_prefix = g_name_norm[:5]
-                
-                # Safely parse GMP date using the dynamic column
-                g_date_raw = str(g_row.get(gmp_date_col, "")).strip()
-                g_date = pd.to_datetime(f"{g_date_raw}-{current_year}", errors="coerce")
+            s_close_raw = str(
+                s_row.get("Closing Date", "")
+            ).strip()
 
-                for _, s_row in sub_work.iterrows():
-                    s_name_norm = normalize_name(s_row.get("Company", ""))
-                    s_prefix = s_name_norm[:5]
-                    
-                    # Safely parse Subscription date using the dynamic column
-                    s_date_raw = str(s_row.get(sub_date_col, "")).strip()
-                    s_date = pd.to_datetime(s_date_raw, errors="coerce")
-            
-            s_date = pd.to_datetime(s_date_raw, errors="coerce")
-
-            # Check if dates match exactly (Month and Day)
-            dates_match = False
-            if pd.notna(g_date) and pd.notna(s_date):
-                if g_date.month == s_date.month and g_date.day == s_date.day:
-                    dates_match = True
-            else:
-                # Fallback to string check
-                if g_date_raw in s_date_raw:
-                    dates_match = True
-
-            if g_prefix == s_prefix and dates_match:
+            # EXACTLY SAME LOGIC AS COLAB:
+            # first 5 chars match + GMP date contained in subscription date
+            if (
+                g_prefix == s_prefix
+                and g_close_raw in s_close_raw
+            ):
                 merged_rows.append({
                     "Type": safe_val(s_row, "Type"),
                     "IPO Name": safe_val(s_row, "Company"),
-                    "Close": s_date_raw,
+                    "Close": safe_val(s_row, "Closing Date"),
+
                     "QIB": safe_val(s_row, "QIB (x)"),
                     "sNII": safe_val(s_row, "sNII (x)"),
                     "bNII": safe_val(s_row, "bNII (x)"),
@@ -366,12 +354,22 @@ def build_summary(subscription_df, gmp_df):
                     "Emp": safe_val(s_row, "Employee (x)"),
                     "SH": safe_val(s_row, "Shareholder (x)"),
                     "Total": safe_val(s_row, "Total (x)"),
+
                     "GMP": safe_val(g_row, "GMP"),
-                    "Price": safe_val(g_row, "Price (₹)"),
+                    "Price": safe_val(g_row, "Price (₹)")
                 })
+
                 break
 
-    return pd.DataFrame(merged_rows)
+    summary_df = pd.DataFrame(merged_rows)
+
+    # DEBUG OUTPUT
+    print(f"Subscription rows: {len(sub_work)}")
+    print(f"GMP rows: {len(gmp_work)}")
+    print(f"Merged rows: {len(summary_df)}")
+
+    return summary_df
+
 # ------------------------------------------------------------------
 # EMAIL
 # ------------------------------------------------------------------
