@@ -315,8 +315,9 @@ def filter_gmp_upcoming(gmp_df, days=FILTER_DAYS):
 # ------------------------------------------------------------------
 # MERGE SUBSCRIPTION + GMP
 # ------------------------------------------------------------------
+
 def build_summary(subscription_df, gmp_df):
-    if subscription_df.empty or gmp_df.empty:
+    if subscription_df.empty:
         return pd.DataFrame()
 
     sub_work = clean_columns(subscription_df)
@@ -324,60 +325,71 @@ def build_summary(subscription_df, gmp_df):
 
     merged_rows = []
 
-    for _, g_row in gmp_work.iterrows():
+    for _, s_row in sub_work.iterrows():
 
-        # GMP side
-        g_name_norm = normalize_name(g_row.get("Name", ""))
-        g_prefix = g_name_norm[:5]
+        s_name_norm = normalize_name(
+            s_row.get("Company", "")
+        )
+        s_prefix = s_name_norm[:5]
 
-        g_close_raw = str(
-            g_row.get("Close", "")
+        s_close_raw = str(
+            s_row.get("Closing Date", "")
         ).strip()
 
-        for _, s_row in sub_work.iterrows():
+        matched_gmp = None
 
-            # Subscription side
-            s_name_norm = normalize_name(
-                s_row.get("Company", "")
+        # Search GMP match
+        for _, g_row in gmp_work.iterrows():
+
+            g_name_norm = normalize_name(
+                g_row.get("Name", "")
             )
-            s_prefix = s_name_norm[:5]
+            g_prefix = g_name_norm[:5]
 
-            s_close_raw = str(
-                s_row.get("Closing Date", "")
+            g_close_raw = str(
+                g_row.get("Close", "")
             ).strip()
 
-            # EXACTLY SAME LOGIC AS COLAB:
-            # first 5 chars match + GMP date contained in subscription date
             if (
                 g_prefix == s_prefix
                 and g_close_raw in s_close_raw
             ):
-                merged_rows.append({
-                    "Type": safe_val(s_row, "Type"),
-                    "IPO Name": safe_val(s_row, "Company"),
-                    "Close": safe_val(s_row, "Closing Date"),
-
-                    "QIB": safe_val(s_row, "QIB (x)"),
-                    "sNII": safe_val(s_row, "sNII (x)"),
-                    "bNII": safe_val(s_row, "bNII (x)"),
-                    "NII": safe_val(s_row, "NII (x)"),
-                    "Retail": safe_val(s_row, "Retail (x)"),
-                    "Emp": safe_val(s_row, "Employee (x)"),
-                    "SH": safe_val(s_row, "Shareholder (x)"),
-                    "Total": safe_val(s_row, "Total (x)"),
-
-                    "GMP": safe_val(g_row, "GMP"),
-                    "Price": safe_val(g_row, "Price (₹)")
-                })
-
+                matched_gmp = g_row
                 break
+
+        merged_rows.append({
+            "Type": safe_val(s_row, "Type"),
+            "IPO Name": safe_val(s_row, "Company"),
+            "Close": safe_val(s_row, "Closing Date"),
+
+            "QIB": safe_val(s_row, "QIB (x)"),
+            "sNII": safe_val(s_row, "sNII (x)"),
+            "bNII": safe_val(s_row, "bNII (x)"),
+            "NII": safe_val(s_row, "NII (x)"),
+            "Retail": safe_val(s_row, "Retail (x)"),
+            "Emp": safe_val(s_row, "Employee (x)"),
+            "SH": safe_val(s_row, "Shareholder (x)"),
+            "Total": safe_val(s_row, "Total (x)"),
+
+            # GMP fields become blank if no match
+            "GMP": (
+                safe_val(matched_gmp, "GMP")
+                if matched_gmp is not None
+                else ""
+            ),
+
+            "Price": (
+                safe_val(matched_gmp, "Price (₹)")
+                if matched_gmp is not None
+                else ""
+            )
+        })
 
     summary_df = pd.DataFrame(merged_rows)
 
-    # DEBUG OUTPUT
     print(f"Subscription rows: {len(sub_work)}")
     print(f"GMP rows: {len(gmp_work)}")
-    print(f"Merged rows: {len(summary_df)}")
+    print(f"Final rows: {len(summary_df)}")
 
     return summary_df
 
