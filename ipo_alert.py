@@ -313,18 +313,35 @@ def build_summary(subscription_df, gmp_df):
     gmp_work = clean_columns(gmp_df)
 
     merged_rows = []
+    current_year = get_now_ist().year
 
     for _, g_row in gmp_work.iterrows():
         g_name_norm = normalize_name(g_row.get("Name", ""))
         g_prefix = g_name_norm[:5]
-        g_close = str(g_row.get("Close", ""))
+        
+        # Safely parse GMP date
+        g_date_raw = str(g_row.get("Close", "")).strip()
+        g_date = pd.to_datetime(f"{g_date_raw}-{current_year}", errors="coerce")
 
         for _, s_row in sub_work.iterrows():
             s_name_norm = normalize_name(s_row.get("Company", ""))
             s_prefix = s_name_norm[:5]
-            s_date_str = str(s_row.get("Closing Date", ""))
+            
+            # Safely parse Subscription date
+            s_date_raw = str(s_row.get("Closing Date", "")).strip()
+            s_date = pd.to_datetime(s_date_raw, errors="coerce")
 
-            if g_prefix == s_prefix and g_close in s_date_str:
+            # Check if dates match exactly (Month and Day)
+            dates_match = False
+            if pd.notna(g_date) and pd.notna(s_date):
+                if g_date.month == s_date.month and g_date.day == s_date.day:
+                    dates_match = True
+            else:
+                # Fallback to string check
+                if g_date_raw in s_date_raw:
+                    dates_match = True
+
+            if g_prefix == s_prefix and dates_match:
                 merged_rows.append({
                     "Type": safe_val(s_row, "Type"),
                     "IPO Name": safe_val(s_row, "Company"),
@@ -343,7 +360,6 @@ def build_summary(subscription_df, gmp_df):
                 break
 
     return pd.DataFrame(merged_rows)
-
 # ------------------------------------------------------------------
 # EMAIL
 # ------------------------------------------------------------------
