@@ -61,16 +61,17 @@ def clean_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def clean_company_name(name) -> str:
-    name = str(name).lower()
-    # Remove anything in brackets, anywhere in the string
-    name = re.sub(r"\(.*?\)", "", name)
-    # Remove common keywords
-    for word in ["ltd", "limited", "ipo", "bse", "nse", "sme"]:
-        name = name.replace(word, "")
-    # Remove trailing single-letter status codes (e.g. " o", " p")
-    name = re.sub(r"\s[op]$", "", name.strip())
-    return name.strip()
+def normalize_name(name) -> str:
+    """Keep only alphanumeric characters and lowercase."""
+    return re.sub(r"[^a-zA-Z0-9]", "", str(name)).lower()
+
+
+def safe_val(row, col):
+    """Return '-' if the value is missing or NaN, otherwise the value."""
+    val = row.get(col, "-")
+    if pd.isna(val):
+        return "-"
+    return val
 
 
 def parse_date_series(series: pd.Series) -> pd.Series:
@@ -314,31 +315,34 @@ def build_summary(subscription_df, gmp_df):
     merged_rows = []
 
     for _, g_row in gmp_work.iterrows():
-        g_name = clean_company_name(g_row.get("Name", ""))
+        g_name_norm = normalize_name(g_row.get("Name", ""))
+        g_prefix = g_name_norm[:5]
+        g_close = str(g_row.get("Close", ""))
 
         for _, s_row in sub_work.iterrows():
-            s_name = clean_company_name(s_row.get("Company", ""))  # now cleaned, not just lower+strip
+            s_name_norm = normalize_name(s_row.get("Company", ""))
+            s_prefix = s_name_norm[:5]
+            s_date_str = str(s_row.get("Closing Date", ""))
 
-            if g_name in s_name or s_name in g_name:
+            if g_prefix == s_prefix and g_close in s_date_str:
                 merged_rows.append({
-                    "Type": s_row.get("Type", "-"),
-                    "IPO Name": s_row.get("Company", "-"),
-                    "Close": s_row.get("Closing Date", "-"),
-                    "QIB": s_row.get("QIB (x)", "-"),
-                    "sNII": s_row.get("sNII (x)", "-"),
-                    "bNII": s_row.get("bNII (x)", "-"),
-                    "NII": s_row.get("NII (x)", "-"),
-                    "Retail": s_row.get("Retail (x)", "-"),
-                    "Emp": s_row.get("Employee (x)", "-"),
-                    "SH": s_row.get("Shareholder (x)", "-"),
-                    "Total": s_row.get("Total (x)", "-"),
-                    "GMP": g_row.get("GMP", "-"),
-                    "Price": g_row.get("Price (₹)", "-"),
+                    "Type": safe_val(s_row, "Type"),
+                    "IPO Name": safe_val(s_row, "Company"),
+                    "Close": safe_val(s_row, "Closing Date"),
+                    "QIB": safe_val(s_row, "QIB (x)"),
+                    "sNII": safe_val(s_row, "sNII (x)"),
+                    "bNII": safe_val(s_row, "bNII (x)"),
+                    "NII": safe_val(s_row, "NII (x)"),
+                    "Retail": safe_val(s_row, "Retail (x)"),
+                    "Emp": safe_val(s_row, "Employee (x)"),
+                    "SH": safe_val(s_row, "Shareholder (x)"),
+                    "Total": safe_val(s_row, "Total (x)"),
+                    "GMP": safe_val(g_row, "GMP"),
+                    "Price": safe_val(g_row, "Price (₹)"),
                 })
                 break
 
     return pd.DataFrame(merged_rows)
-
 
 # ------------------------------------------------------------------
 # EMAIL
@@ -353,8 +357,8 @@ def send_email(df_summary):
         <html>
         <body>
             <h2>IPO Alert</h2>
-            <p>No IPOs found in the selected window.</p>
             <p>Generated: {generated_str}</p>
+            <p>No IPOs found in the selected window.</p>
         </body>
         </html>
         """
@@ -374,9 +378,9 @@ def send_email(df_summary):
           </head>
           <body>
             <h2>IPO Alert</h2>
+            <p><small>Generated: {generated_str}</small></p>
             <p>IPOs closing in the selected window:</p>
             {html_table}
-            <p><small>Generated: {generated_str}</small></p>
           </body>
         </html>
         """
