@@ -125,11 +125,17 @@ async def scrape_gmp():
 
         print("Fetching GMP data...")
 
-        await page.goto(
-            GMP_URL,
-            wait_until="networkidle",
-            timeout=60000
-        )
+        try:
+            # networkidle often hangs on sites with ads/analytics
+            await page.goto(
+                GMP_URL,
+                wait_until="domcontentloaded",
+                timeout=120000
+            )
+        except Exception as e:
+            print(f"⚠ Page.goto failed for GMP: {e}")
+            await browser.close()
+            return None
 
         try:
             await page.wait_for_function(
@@ -138,17 +144,22 @@ async def scrape_gmp():
                     return rows.length > 1 ||
                            (rows.length === 1 && !rows[0].innerText.includes('No data'));
                 }""",
-                timeout=30000
+                timeout=45000
             )
-        except:
-            print("No GMP data loaded.")
+        except Exception as e:
+            print(f"⚠ GMP table did not load in time: {e}")
             await browser.close()
             return None
 
-        table_html = await page.inner_html("table")
+        try:
+            table_html = await page.inner_html("table")
+        except Exception as e:
+            print(f"⚠ Could not read GMP table HTML: {e}")
+            await browser.close()
+            return None
+
         await browser.close()
         return table_html
-
 
 # ------------------------------------------------------------------
 # LOAD SUBSCRIPTION DATA
