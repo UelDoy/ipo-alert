@@ -390,10 +390,10 @@ def build_summary(subscription_df, gmp_df):
         cols = [c for c in ["Name", "Close"] if c in filtered_gmp_df.columns]
         print(filtered_gmp_df[cols].to_string())
 
-# =========================================
+    # =========================================
 
-print("Building summary...")
-summary_df = build_summary(filtered_subscription_df, filtered_gmp_df)
+    print("Building summary...")
+    summary_df = build_summary(filtered_subscription_df, filtered_gmp_df)
 
     return summary_df
 
