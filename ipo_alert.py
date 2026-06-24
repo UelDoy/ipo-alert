@@ -82,6 +82,36 @@ def parse_date_series(series: pd.Series) -> pd.Series:
     return pd.to_datetime(s, errors="coerce", dayfirst=True)
 
 
+# --- NEW: link helpers -------------------------------------------------
+
+def build_link_map(links_data):
+    """Build a {normalized_name: href} map from scraped anchor data."""
+    link_map = {}
+    for item in links_data:
+        text = item.get("text", "")
+        href = item.get("href", "")
+        if not text or not href:
+            continue
+        key = normalize_name(text)
+        if key and key not in link_map:
+            link_map[key] = href
+    return link_map
+
+
+def find_link(name, link_map):
+    """Find the best-matching link for a given IPO/company name."""
+    if not link_map:
+        return ""
+    key = normalize_name(name)
+    if key in link_map:
+        return link_map[key]
+    prefix = key[:5]
+    for k, v in link_map.items():
+        if k[:5] == prefix:
+            return v
+    return ""
+
+
 # ------------------------------------------------------------------
 # SUBSCRIPTION SCRAPER
 # ------------------------------------------------------------------
@@ -107,11 +137,18 @@ async def scrape_subscription(label, url):
         except:
             print(f"No rows found for {label}")
             await browser.close()
-            return None
+            return None, []
 
         table_html = await page.inner_html("table")
+
+        # NEW: extract embedded links (company name -> detail page URL)
+        links_data = await page.eval_on_selector_all(
+            "table a",
+            "els => els.map(el => ({text: el.innerText.trim(), href: el.href}))"
+        )
+
         await browser.close()
-        return table_html
+        return table_html, links_data
 
 
 # ------------------------------------------------------------------
@@ -135,7 +172,7 @@ async def scrape_gmp():
         except Exception as e:
             print(f"⚠ Page.goto failed for GMP: {e}")
             await browser.close()
-            return None
+            return None, []
 
         try:
             await page.wait_for_function(
@@ -149,17 +186,24 @@ async def scrape_gmp():
         except Exception as e:
             print(f"⚠ GMP table did not load in time: {e}")
             await browser.close()
-            return None
+            return None, []
 
         try:
             table_html = await page.inner_html("table")
         except Exception as e:
             print(f"⚠ Could not read GMP table HTML: {e}")
             await browser.close()
-            return None
+            return None, []
+
+        # NEW: extract embedded links (IPO name -> detail page URL)
+        links_data = await page.eval_on_selector_all(
+            "table a",
+            "els => els.map(el => ({text: el.innerText.trim(), href: el.href}))"
+        )
 
         await browser.close()
-        return table_html
+        return table_html, links_data
+
 
 # ------------------------------------------------------------------
 # LOAD SUBSCRIPTION DATA
@@ -167,9 +211,10 @@ async def scrape_gmp():
 
 async def get_subscription_data():
     results = {}
+    all_links = {}  # NEW
 
     for label, url in URLS.items():
-        html = await scrape_subscription(label, url)
+        html, links_data = await scrape_subscription(label, url)  # CHANGED: unpack tuple
 
         if not html:
             continue
@@ -179,12 +224,13 @@ async def get_subscription_data():
         df.insert(0, "Type", label)
 
         results[label] = df
+        all_links.update(build_link_map(links_data))  # NEW
 
     if not results:
-        return pd.DataFrame()
+        return pd.DataFrame(), {}  # CHANGED: return empty link map too
 
     combined_df = pd.concat(results.values(), ignore_index=True)
-    return combined_df
+    return combined_df, all_links  # CHANGED
 
 
 # ------------------------------------------------------------------
@@ -229,10 +275,10 @@ def filter_upcoming_ipos(subscription_df, days=FILTER_DAYS):
 # ------------------------------------------------------------------
 
 async def get_gmp_data():
-    html = await scrape_gmp()
+    html, links_data = await scrape_gmp()  # CHANGED: unpack tuple
 
     if not html:
-        return pd.DataFrame()
+        return pd.DataFrame(), {}  # CHANGED
 
     gmp_df = pd.read_html(StringIO("<table>" + html + "</table>"))[0]
     gmp_df = gmp_df.dropna(how="all").reset_index(drop=True)
@@ -264,7 +310,8 @@ async def get_gmp_data():
     ]
 
     gmp_df = clean_columns(gmp_df)
-    return gmp_df.reset_index(drop=True)
+    gmp_link_map = build_link_map(links_data)  # NEW
+    return gmp_df.reset_index(drop=True), gmp_link_map  # CHANGED
 
 
 # ------------------------------------------------------------------
@@ -316,9 +363,12 @@ def filter_gmp_upcoming(gmp_df, days=FILTER_DAYS):
 # MERGE SUBSCRIPTION + GMP
 # ------------------------------------------------------------------
 
-def build_summary(subscription_df, gmp_df):
+def build_summary(subscription_df, gmp_df, sub_links=None, gmp_links=None):  # CHANGED: new params
     if subscription_df.empty:
         return pd.DataFrame()
+
+    sub_links = sub_links or {}  # NEW
+    gmp_links = gmp_links or {}  # NEW
 
     sub_work = clean_columns(subscription_df)
     gmp_work = clean_columns(gmp_df)
@@ -357,9 +407,16 @@ def build_summary(subscription_df, gmp_df):
                 matched_gmp = g_row
                 break
 
+        # NEW: resolve the link — prefer subscription-page link, fall back to GMP-page link
+        company_name = safe_val(s_row, "Company")
+        link = find_link(company_name, sub_links) or find_link(company_name, gmp_links)
+        ipo_name_html = (
+            f'<a href="{link}" target="_blank">{company_name}</a>' if link else company_name
+        )
+
         merged_rows.append({
             "Type": safe_val(s_row, "Type"),
-            "IPO Name": safe_val(s_row, "Company"),
+            "IPO Name": ipo_name_html,  # CHANGED: was safe_val(s_row, "Company")
             "Close": safe_val(s_row, "Closing Date"),
 
             "QIB": safe_val(s_row, "QIB (x)"),
@@ -413,7 +470,7 @@ def send_email(df_summary):
         """
         subject = "IPO Alert - No IPOs Found"
     else:
-        html_table = df_summary.to_html(index=False, classes="table", border=0)
+        html_table = df_summary.to_html(index=False, classes="table", border=0, escape=False)  # CHANGED: escape=False
         html_content = f"""
         <html>
           <head>
@@ -458,7 +515,7 @@ def send_email(df_summary):
 
 async def main():
     print("Loading subscription data...")
-    subscription_df = await get_subscription_data()
+    subscription_df, sub_links = await get_subscription_data()  # CHANGED: unpack tuple
 
     print(f"Filtering IPOs closing in next {FILTER_DAYS} days...")
     filtered_subscription_df = filter_upcoming_ipos(
@@ -467,7 +524,7 @@ async def main():
     )
 
     print("Loading GMP data...")
-    gmp_df = await get_gmp_data()
+    gmp_df, gmp_links = await get_gmp_data()  # CHANGED: unpack tuple
     filtered_gmp_df = filter_gmp_upcoming(
         gmp_df,
         days=FILTER_DAYS
@@ -502,7 +559,12 @@ async def main():
     # =========================================
 
     print("Building summary...")
-    summary_df = build_summary(filtered_subscription_df, filtered_gmp_df)
+    summary_df = build_summary(
+        filtered_subscription_df,
+        filtered_gmp_df,
+        sub_links,   # NEW
+        gmp_links    # NEW
+    )
 
     print(f"Rows in summary: {len(summary_df)}")
 
