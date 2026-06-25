@@ -310,8 +310,18 @@ async def get_gmp_data():
     ]
 
     gmp_df = clean_columns(gmp_df)
-    gmp_link_map = build_link_map(links_data)  # NEW
-    return gmp_df.reset_index(drop=True), gmp_link_map  # CHANGED
+
+    # Fix: closed-status IPOs have GMP text baked into the Close cell
+    # (e.g. "25-Jun GMP: 0") — extract just the date part
+    if "Close" in gmp_df.columns:
+        gmp_df["Close"] = (
+            gmp_df["Close"]
+            .astype(str)
+            .str.extract(r"(\d{1,2}-[A-Za-z]{3})", expand=False)
+        )
+
+    gmp_link_map = build_link_map(links_data)
+    return gmp_df.reset_index(drop=True), gmp_link_map
 
 
 # ------------------------------------------------------------------
