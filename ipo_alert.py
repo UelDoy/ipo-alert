@@ -548,6 +548,15 @@ async def main():
 
     print("\n========== GMP DATA ==========")
     print("Total scraped:", len(gmp_df))
+    print("\n========== RAW GMP DATA (UNFILTERED) ==========")
+    if not gmp_df.empty:
+        close_cols = [c for c in gmp_df.columns if "Close" in str(c)]
+        name_cols = [c for c in gmp_df.columns if "Name" in str(c)]
+        print("All columns:", list(gmp_df.columns))
+        print(gmp_df[name_cols + close_cols].head(10).to_string())
+    else:
+        print("gmp_df is empty even before filtering!")
+    
     print("After filter:", len(filtered_gmp_df))
 
     if not filtered_gmp_df.empty:
