@@ -553,7 +553,7 @@ async def main():
         close_cols = [c for c in gmp_df.columns if "Close" in str(c)]
         name_cols = [c for c in gmp_df.columns if "Name" in str(c)]
         print("All columns:", list(gmp_df.columns))
-        print(gmp_df[name_cols + close_cols].head(10).to_string())
+        print(gmp_df[name_cols + close_cols].to_string())
     else:
         print("gmp_df is empty even before filtering!")
     
