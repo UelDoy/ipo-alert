@@ -467,6 +467,7 @@ def build_summary(subscription_df, gmp_df, sub_links=None, gmp_links=None):  # C
 def send_email(df_summary):
     now_ist = get_now_ist()
     generated_str = now_ist.strftime("%d-%b-%Y %I:%M %p IST")
+    today_str = now_ist.strftime("%d-%b-%Y")  # e.g. "25-Jun-2026", matches "Closing Date" format
 
     if df_summary.empty:
         html_content = f"""
@@ -480,7 +481,22 @@ def send_email(df_summary):
         """
         subject = "IPO Alert - No IPOs Found"
     else:
-        html_table = df_summary.to_html(index=False, classes="table", border=0, escape=False)  # CHANGED: escape=False
+        # Split into "closing today" vs "rest", based on the Close column
+        is_today = df_summary["Close"].astype(str).str.strip() == today_str
+        today_df = df_summary[is_today].reset_index(drop=True)
+        rest_df = df_summary[~is_today].reset_index(drop=True)
+
+        today_table_html = (
+            today_df.to_html(index=False, classes="table", border=0, escape=False)
+            if not today_df.empty
+            else "<p>None closing today.</p>"
+        )
+        rest_table_html = (
+            rest_df.to_html(index=False, classes="table", border=0, escape=False)
+            if not rest_df.empty
+            else "<p>None in the rest of the window.</p>"
+        )
+
         html_content = f"""
         <html>
           <head>
@@ -490,17 +506,22 @@ def send_email(df_summary):
               .table tr:nth-child(even) {{ background-color: #f9f9f9; }}
               .table th {{ background-color: #1a3a5c; color: white; font-weight: bold; }}
               h2 {{ font-family: Arial, sans-serif; color: #1a3a5c; }}
+              h3 {{ font-family: Arial, sans-serif; color: #1a3a5c; margin-top: 24px; }}
             </style>
           </head>
           <body>
             <h2>IPO Alert</h2>
             <p><small>Generated: {generated_str}</small></p>
-            <p>IPOs closing in the selected window:</p>
-            {html_table}
+
+            <h3>Closing Today ({len(today_df)})</h3>
+            {today_table_html}
+
+            <h3>Closing Later ({len(rest_df)})</h3>
+            {rest_table_html}
           </body>
         </html>
         """
-        subject = f"IPO Alert - {len(df_summary)} IPO(s)"
+        subject = f"IPO Alert - {len(today_df)} Today, {len(df_summary)} Total"
 
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(GMAIL_USER, GMAIL_PASS)
@@ -517,7 +538,6 @@ def send_email(df_summary):
                 print(f"Email sent to {recipient}")
             except Exception as e:
                 print(f"Failed to send to {recipient}: {e}")
-
 
 # ------------------------------------------------------------------
 # MAIN
